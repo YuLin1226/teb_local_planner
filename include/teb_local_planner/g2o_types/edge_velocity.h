@@ -110,6 +110,7 @@ public:
     
     const double omega = angle_diff / deltaT->estimate();
   
+    // 以頂點和時間差計算速度，如果速度在區間內，懲罰值為 0 ，否則照比例增加。
     _error[0] = penaltyBoundToInterval(vel, -cfg_->robot.max_vel_x_backwards, cfg_->robot.max_vel_x,cfg_->optim.penalty_epsilon);
     _error[1] = penaltyBoundToInterval(omega, cfg_->robot.max_vel_theta,cfg_->optim.penalty_epsilon);
 

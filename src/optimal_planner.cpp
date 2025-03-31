@@ -233,6 +233,7 @@ bool TebOptimalPlanner::optimizeTEB(int iterations_innerloop, int iterations_out
 
     clearGraph();
 
+    // 這個應該是拿來讓後續迭代的影響越來越「大或小」的設置，default value = 2.0，所以應該是會讓影響越來越大。
     weight_multiplier *= cfg_->optim.weight_adapt_factor;
   }
 
@@ -258,6 +259,8 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
   ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
   if (!teb_.isInit())
   {
+    // 這邊會在 teb 裡面去把 initial_plan 做插值，然後添加進 Vertex. Vertex 有分是否固定，不過他們都沒有被設定成固定。
+    // 這部份應該是為 g2o 的準備。
     teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
       cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
   }
@@ -277,8 +280,12 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
         cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
     }
   }
+
+  // start_vel 吃的是 robot_vel，所以應該是機器人目前的速度。
   if (start_vel)
     setVelocityStart(*start_vel);
+  
+  // 這個代表抵達終點時是否應停止。
   if (free_goal_vel)
     setVelocityGoalFree();
   else
@@ -434,6 +441,12 @@ void TebOptimalPlanner::AddTEBVertices()
   unsigned int id_counter = 0; // 用于顶点的索引
   obstacles_per_vertex_.resize(teb_.sizePoses());
   auto iter_obstacle = obstacles_per_vertex_.begin();
+  
+  
+  // pose 頂點的數量 > time_diff 頂點的數量
+  // 所以裡面用 if 也先把 time_diff 頂點塞入。Optimizer 的頂點順序就會變成：p, d, p, d, 這樣（p: pose | d: time_diff）
+  // 這個頂點順序關係一定是交替的，因為 TEB 後續會根據交替的關係來建立速度約束。
+  // 然後在 addPoseAndTimeDiff 的時候，也有說明 要先加入一個 Pose Vertex (通常代表起點)，然後後續再一次加入 1 Pose & 1 TimeDiff 頂點。
   for (int i=0; i<teb_.sizePoses(); ++i)
   {
     teb_.PoseVertex(i)->setId(id_counter++); // 先记录PoseVertex的id
@@ -695,6 +708,7 @@ void TebOptimalPlanner::AddEdgesViaPoints()
   for (ViaPointContainer::const_iterator vp_it = via_points_->begin(); vp_it != via_points_->end(); ++vp_it)
   {
 
+    // 找trajectory裡面，離viapoint最近的點 index
     int index = teb_.findClosestTrajectoryPose(*vp_it, NULL, start_pose_idx);
     if (cfg_->trajectory.via_points_ordered)
       start_pose_idx = index+2; // skip a point to have a DOF inbetween for further via-points
@@ -719,8 +733,12 @@ void TebOptimalPlanner::AddEdgesViaPoints()
     information.fill(cfg_->optim.weight_viapoint);
 
     EdgeViaPoint* edge_viapoint = new EdgeViaPoint;
+    // trajectory 的 index 會被設計成一元邊（只有一個頂點）的頂點
+    // teb_.PoseVertex(index) 代表的是 pose_vec 的 index 元素，就是前面步驟一直在 addPose 的那部份其中元素。
     edge_viapoint->setVertex(0,teb_.PoseVertex(index));
     edge_viapoint->setInformation(information);
+    // setParameters 裡面會把 vp_it 這個指標的指向點（via point) 設定為一元邊的 _measurement
+    // 優化的時候，就是拿 trajectory 的 index 點和這個 _measurement 來計算誤差。
     edge_viapoint->setParameters(*cfg_, &(*vp_it));
     optimizer_->addEdge(edge_viapoint);
   }

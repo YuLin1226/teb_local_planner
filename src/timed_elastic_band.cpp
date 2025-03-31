@@ -76,7 +76,7 @@ TimedElasticBand::~TimedElasticBand()
   clearTimedElasticBand();
 }
 
-
+// 添加優化的Vertex Pose
 void TimedElasticBand::addPose(const PoseSE2& pose, bool fixed)
 {
   VertexPose* pose_vertex = new VertexPose(pose, fixed);
@@ -84,6 +84,7 @@ void TimedElasticBand::addPose(const PoseSE2& pose, bool fixed)
   return;
 }
 
+// 添加優化的Vertex Pose
 void TimedElasticBand::addPose(const Eigen::Ref<const Eigen::Vector2d>& position, double theta, bool fixed)
 {
   VertexPose* pose_vertex = new VertexPose(position, theta, fixed);
@@ -91,6 +92,7 @@ void TimedElasticBand::addPose(const Eigen::Ref<const Eigen::Vector2d>& position
   return;
 }
 
+// 添加優化的Vertex Pose
  void TimedElasticBand::addPose(double x, double y, double theta, bool fixed)
 {
   VertexPose* pose_vertex = new VertexPose(x, y, theta, fixed);
@@ -98,6 +100,7 @@ void TimedElasticBand::addPose(const Eigen::Ref<const Eigen::Vector2d>& position
   return;
 }
 
+// 添加優化的Vertex Time Difference
 void TimedElasticBand::addTimeDiff(double dt, bool fixed)
 {
   ROS_ASSERT_MSG(dt > 0., "Adding a timediff requires a positive dt");

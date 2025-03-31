@@ -169,6 +169,7 @@ void TebLocalPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costm
     dynamic_recfg_->setCallback(cb);
 
     // 校验用于优化footprint和代价的footprint
+    // 這邊其實就在比較機器人footprint的距離值和costmap距離值的判斷
     validateFootprints(robot_model->getInscribedRadius(), robot_inscribed_radius_, cfg_.obstacles.min_obstacle_dist);
 
     // 设置自定义障碍物的回调函数
@@ -254,7 +255,8 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   costmap_ros_->getRobotPose(robot_pose);
   robot_pose_ = PoseSE2(robot_pose.pose);
 
-  // 获取机器人速度
+  // 获取机器人速度（odom_helper從Odom的Subsriber獲取速度）
+  // 但我覺得用 position 來存速度有點太髒了，很容易被誤導。(by Ryan)
   geometry_msgs::PoseStamped robot_vel_tf;
   odom_helper_.getRobotVel(robot_vel_tf);
   robot_vel_.linear.x = robot_vel_tf.pose.position.x;
@@ -268,6 +270,7 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   std::vector<geometry_msgs::PoseStamped> transformed_plan;
   int goal_idx;
   geometry_msgs::TransformStamped tf_plan_to_global;
+  // 這邊應該就是把全局路徑（相對於機器人pose內一定距離）的部份轉換成特定座標係
   if (!transformGlobalPlan(*tf_, global_plan_, robot_pose, *costmap_, global_frame_, cfg_.trajectory.max_global_plan_lookahead_dist,
                            transformed_plan, &goal_idx, &tf_plan_to_global))
   {
@@ -278,6 +281,7 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
 
   // 更新via-points容器
   if (!custom_via_points_active_)
+    // 這邊會根據 transformed_plan 以及設置的距離，來決定 via_points_ 的內容
     updateViaPointsContainer(transformed_plan, cfg_.trajectory.global_plan_viapoint_sep);
 
   nav_msgs::Odometry base_odom;
@@ -285,6 +289,8 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
 
   // 检查是否已经到了目标点
   geometry_msgs::PoseStamped global_goal;
+  // tf_plan_to_global 是剛剛獲取的 global_plan 到 global_frame 的轉換關係。
+  // 所以 global_goal 是被轉換在 global_frame 底下，應該和 robot_pose 是同個座標係，所以才能加減。
   tf2::doTransform(global_plan_.back(), global_goal, tf_plan_to_global);
   double dx = global_goal.pose.position.x - robot_pose_.x();
   double dy = global_goal.pose.position.y - robot_pose_.y();
@@ -304,6 +310,7 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
 
 
   // 如果转换后的全局路径为空，返回false
+  // transformed_plan 是在 global_frame 的 global_plan
   if (transformed_plan.empty())
   {
     ROS_WARN("Transformed plan is empty. Cannot determine a local plan.");
@@ -713,6 +720,7 @@ bool TebLocalPlannerROS::transformGlobalPlan(const tf2_ros::Buffer& tf, const st
     }
 
     // 获取路径坐标系到全局坐标系的转换
+    // （urdf那邊會建立好 tf tree, 所以這邊的 tf 可以直接利用 lookupTransform 得到 frame 之間的變換）
     geometry_msgs::TransformStamped plan_to_global_transform = tf.lookupTransform(global_frame, ros::Time(), plan_pose.header.frame_id, plan_pose.header.stamp,
                                                                                   plan_pose.header.frame_id, ros::Duration(cfg_.robot.transform_tolerance));
 
@@ -734,6 +742,8 @@ bool TebLocalPlannerROS::transformGlobalPlan(const tf2_ros::Buffer& tf, const st
     bool robot_reached = false;
     for(int j=0; j < (int)global_plan.size(); ++j)
     {
+      // 這邊能直接加減是因為，robot_pose 是由 plan_pose 轉換而得。
+      // 而 plan_pose 和 global_plan 是同一個 frame，前面有寫「plan_pose = global_plan[0]」
       double x_diff = robot_pose.pose.position.x - global_plan[j].pose.position.x;
       double y_diff = robot_pose.pose.position.y - global_plan[j].pose.position.y;
       double new_sq_dist = x_diff * x_diff + y_diff * y_diff;
